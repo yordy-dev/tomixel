@@ -20,5 +20,5 @@
 
 ### Distribución
 
-- Instalador: `Tomixel Setup 1.7.23.exe`.
+- Instalador publicado: `Tomixel.Setup.1.7.23.exe`.
 - SHA-256: `1CBD5DDAFDED701D4DEBF0FDB16DEBD087317DB74BECDCD4602F4422E1CDF7FA`.

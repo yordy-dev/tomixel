@@ -6,7 +6,7 @@ Tomixel es una grabadora de pantalla local para Windows. Permite capturar la pan
 
 La versión estable para Windows está disponible en [GitHub Releases](https://github.com/yordy-dev/tomixel/releases/latest).
 
-1. Descarga `Tomixel Setup 1.7.23.exe`.
+1. Descarga `Tomixel.Setup.1.7.23.exe`.
 2. Ejecuta el instalador y elige la carpeta de instalación.
 3. Abre Tomixel y sigue el tutorial inicial.
 
