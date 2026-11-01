@@ -16,6 +16,7 @@
     "test:area": "node tests/area.mjs",
     "test:editing": "node tests/editing.mjs",
     "test:transitions": "node tests/window-transitions.mjs",
+    "media:readme": "node scripts/readme-media.mjs",
     "package:win": "npm run build && node scripts/package.mjs nsis",
     "package:dir": "npm run build && node scripts/package.mjs dir"
   },
