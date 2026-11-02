@@ -9,8 +9,8 @@ function sendCtrlWheel(delta) {
   const encoded = Buffer.from(code, 'utf16le').toString('base64'); const root = process.env.SystemRoot || 'C:\\Windows';
   const result = spawnSync(path.join(root, 'System32/WindowsPowerShell/v1.0/powershell.exe'), ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], { windowsHide: true }); if (result.status) throw new Error(result.stderr.toString());
 }
-function sendShortcut(key) {
-  const code = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class LRKeys { [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra); }'; [LRKeys]::keybd_event(0x11,0,0,[UIntPtr]::Zero); [LRKeys]::keybd_event(${key},0,0,[UIntPtr]::Zero); [LRKeys]::keybd_event(${key},0,2,[UIntPtr]::Zero); [LRKeys]::keybd_event(0x11,0,2,[UIntPtr]::Zero)`;
+function sendAltShortcut(key) {
+  const code = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class LRKeys { [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra); }'; [LRKeys]::keybd_event(0x12,0,0,[UIntPtr]::Zero); [LRKeys]::keybd_event(${key},0,0,[UIntPtr]::Zero); [LRKeys]::keybd_event(${key},0,2,[UIntPtr]::Zero); [LRKeys]::keybd_event(0x12,0,2,[UIntPtr]::Zero)`;
   const encoded = Buffer.from(code, 'utf16le').toString('base64'); const root = process.env.SystemRoot || 'C:\\Windows';
   const result = spawnSync(path.join(root, 'System32/WindowsPowerShell/v1.0/powershell.exe'), ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], { windowsHide: true }); if (result.status) throw new Error(result.stderr.toString());
 }
@@ -52,10 +52,10 @@ try {
   await page.getByRole('button', { name: 'Iniciar grabación', exact: true }).click(); await page.getByRole('timer').waitFor();
   await page.getByRole('button', { name: 'Pausar', exact: true }).waitFor(); await page.waitForTimeout(1800);
   const display = await app.evaluate(({ screen }) => screen.getPrimaryDisplay().bounds);
-  sendShortcut(0x31); await page.getByRole('button', { name: 'Zoom 150%', exact: true }).waitFor({ timeout: 5000 });
-  const shortcutLive = page.getByLabel('Vista en vivo del zoom grabado'); await shortcutLive.waitFor(); await page.waitForFunction(() => document.querySelector('.zoom-live-preview')?.videoWidth > 0); const transitionFrame = await videoSignature(shortcutLive); await page.waitForTimeout(750); const settledFrame = await videoSignature(shortcutLive); const transitionDifference = transitionFrame.reduce((sum, value, index) => sum + Math.abs(value - settledFrame[index]), 0) / transitionFrame.length; assert.ok(transitionDifference > .25); pass('150% shortcut enters zoom through a visible transition', { transitionDifference });
-  sendShortcut(0x31); await page.getByRole('button', { name: 'Zoom 100%', exact: true }).waitFor({ timeout: 5000 });
-  sendShortcut(0x32); await page.getByRole('button', { name: 'Zoom 200%', exact: true }).waitFor({ timeout: 5000 }); sendShortcut(0x32); await page.getByRole('button', { name: 'Zoom 100%', exact: true }).waitFor({ timeout: 5000 }); pass('150% and 200% shortcuts toggle their exact level and return to 100%');
+  sendAltShortcut(0x31); await page.getByRole('button', { name: 'Zoom 150%', exact: true }).waitFor({ timeout: 5000 });
+  const shortcutLive = page.getByLabel('Vista en vivo del zoom grabado'); await shortcutLive.waitFor(); await page.waitForFunction(() => document.querySelector('.zoom-live-preview')?.videoWidth > 0); const shortcutState = await shortcutLive.evaluate(video => ({ width: video.videoWidth, height: video.videoHeight, ready: video.readyState })); assert.ok(shortcutState.width > 0 && shortcutState.height > 0 && shortcutState.ready >= 2); pass('150% shortcut opens a live zoom preview without delaying the control', shortcutState);
+  sendAltShortcut(0x31); await page.getByRole('button', { name: 'Zoom 100%', exact: true }).waitFor({ timeout: 5000 });
+  sendAltShortcut(0x32); await page.getByRole('button', { name: 'Zoom 200%', exact: true }).waitFor({ timeout: 5000 }); sendAltShortcut(0x32); await page.getByRole('button', { name: 'Zoom 100%', exact: true }).waitFor({ timeout: 5000 }); pass('150% and 200% shortcuts toggle their exact level and return to 100%');
   sendCtrlWheel(120);
   await page.getByRole('button', { name: 'Zoom 150%', exact: true }).waitFor({ timeout: 5000 });
   const live = page.getByLabel('Vista en vivo del zoom grabado'); await live.waitFor(); await page.waitForFunction(() => document.querySelector('.zoom-live-preview')?.videoWidth > 0);

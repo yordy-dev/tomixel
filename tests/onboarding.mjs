@@ -26,6 +26,8 @@ try {
   const settingsFile = path.join(output, 'profile', 'settings.json');
   const previous = JSON.parse(await fs.readFile(settingsFile, 'utf8'));
   previous.settings.onboardingVersion = 4;
+  previous.schemaVersion = 10;
+  previous.settings.shortcuts = { record: 'Control+R', pause: 'Control+P', mic: 'Control+M', zoom150: 'Control+1', zoom200: 'Control+2', cameraSmall: 'Control+Q', cameraMedium: 'Control+W', cameraFullscreen: 'Control+E', cameraImage: 'Control+I' };
   await fs.writeFile(settingsFile, JSON.stringify(previous, null, 2));
   app = await electron.launch({ ...(executablePath ? { executablePath, args: [] } : { args: ['.'] }), env, chromiumSandbox: true });
   const updatePage = await app.firstWindow(); updatePage.setDefaultTimeout(20000);
@@ -33,8 +35,9 @@ try {
   assert.equal((await updatePage.evaluate(() => window.desktop.config())).firstRun, false);
   await updatePage.getByRole('button', { name: 'Entrar sin tutorial', exact: true }).click();
   await updatePage.getByRole('button', { name: 'Iniciar grabación', exact: true }).waitFor();
-  assert.equal((await updatePage.evaluate(() => window.desktop.config())).settings.onboardingVersion, 5);
-  console.log('PASS this update shows the tutorial once to an existing version 4 profile');
+  const migrated = await updatePage.evaluate(() => window.desktop.config());
+  assert.equal(migrated.settings.onboardingVersion, 5); assert.equal(migrated.settings.shortcuts.record, 'Alt+F9'); assert.equal(migrated.settings.shortcuts.cameraSmall, '');
+  console.log('PASS this update shows the tutorial once and migrates untouched conflict-prone shortcuts');
 } finally {
   if (app) await app.close();
   await fs.mkdir(output, { recursive: true });

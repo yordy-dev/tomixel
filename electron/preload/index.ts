@@ -13,6 +13,7 @@ const api: DesktopAPI = {
   saveEdits: (id, cuts) => ipcRenderer.invoke('save-edits', id, cuts), saveScreenshot: (id, png) => ipcRenderer.invoke('save-screenshot', id, png), copyScreenshot: png => ipcRenderer.invoke('copy-screenshot', png),
   library: () => ipcRenderer.invoke('library'), rename: (id, title) => ipcRenderer.invoke('rename', id, title), remove: id => ipcRenderer.invoke('remove', id), removeMany: ids => ipcRenderer.invoke('remove-many', ids),
   thumbnail: id => ipcRenderer.invoke('thumbnail', id), editorProxy: id => ipcRenderer.invoke('editor-proxy', id), exportMp4: (id, title, cuts, duration) => ipcRenderer.invoke('export-mp4', id, title, cuts, duration),
+  cancelExport: id => ipcRenderer.invoke('cancel-export', id), clearEditorCache: () => ipcRenderer.invoke('clear-editor-cache'),
   cursor: displayId => ipcRenderer.invoke('cursor', displayId), storageStats: () => ipcRenderer.invoke('storage-stats'),
   openFolder: id => ipcRenderer.invoke('open-folder', id), status: s => ipcRenderer.invoke('status', s), layout: page => ipcRenderer.invoke('layout', page),
   stageLayout: page => ipcRenderer.invoke('stage-layout', page), revealLayout: () => ipcRenderer.invoke('reveal-layout'),

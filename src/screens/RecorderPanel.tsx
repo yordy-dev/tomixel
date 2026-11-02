@@ -25,7 +25,7 @@ export function RecorderPanel({ config, state, source, change, navigate, start }
     </div></details>
     {!state.ready && <p className="preparation-status" role="status">{state.preparation || 'Preparando dispositivos…'} Si un permiso falla, revisa Ajustes de privacidad de Windows y vuelve a elegir el dispositivo.</p>}
     <button className="primary record-button" data-tour="record" onClick={start} disabled={!ready}><span className="record-dot" />{state.ready ? 'Iniciar grabación' : 'Preparando dispositivos…'}</button>
-    <p className="privacy"><ShieldCheck size={13} />Solo en tu equipo · Sin límite de tiempo</p>
+    <p className="privacy"><ShieldCheck size={13} />Solo en tu equipo · Sin límite impuesto por Tomixel</p>
     <footer className="panel-footer"><button data-tour="settings" onClick={() => navigate('settings')}><Settings2 size={18} />Ajustes</button><button onClick={() => s.teleprompterText.trim() ? void window.desktop.showTeleprompter().catch(() => navigate('settings-teleprompter')) : navigate('settings-teleprompter')}><ScrollText size={18} />Teleprompter</button><button onClick={() => navigate('help')}><CircleHelp size={18} />Ayuda</button><button onClick={() => navigate('library')}><FolderClosed size={18} />Biblioteca</button></footer>
   </main></>;
 }

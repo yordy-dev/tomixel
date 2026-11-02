@@ -21,7 +21,7 @@ export default function App() {
   const [source, setSource] = useState<Source | null>(null), [recording, setRecording] = useState<Recording | null>(null), [error, setError] = useState(''), [feedback, setFeedback] = useState('');
   const [savingSettings, setSavingSettings] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
-  const startingAfterPick = useRef(false), exiting = useRef(false), restarting = useRef(false), resumeAfterSettings = useRef(false);
+  const startingAfterPick = useRef(false), exiting = useRef(false), restarting = useRef(false), resumeAfterSettings = useRef(false), stopShortcutDeadline = useRef(0);
   const report = useCallback((e: unknown) => setError(mediaError(e)), []);
   const active = !['idle', 'finished'].includes(state.phase);
   useEffect(() => { const stopBrowserZoom = (event: WheelEvent) => { if (event.ctrlKey) event.preventDefault(); }; window.addEventListener('wheel', stopBrowserZoom, { passive: false }); return () => window.removeEventListener('wheel', stopBrowserZoom); }, []);
@@ -103,7 +103,14 @@ export default function App() {
       const label = action === 'small' ? 'Cámara pequeña' : action === 'medium' ? 'Cámara mediana' : action === 'fullscreen' ? (settings.cameraView === 'fullscreen' ? 'Cámara a pantalla completa' : 'Cámara en burbuja') : settings.cameraView === 'image' ? 'Imagen de cámara activada' : 'Cámara en vivo activada';
       setFeedback(`${label}.${state.phase === 'finished' ? ' Se aplicará en la próxima grabación.' : ''}`);
     }).catch(report);
-    if (command === 'record') { if (active) stop(); else if (page === 'home') void start(); else { engine.reset(); navigate('home'); } }
+    if (command === 'record') {
+      if (['recording', 'paused'].includes(state.phase)) {
+        if (Date.now() <= stopShortcutDeadline.current) { stopShortcutDeadline.current = 0; stop(); }
+        else { stopShortcutDeadline.current = Date.now() + 1800; setFeedback('Pulsa otra vez el atajo de iniciar para detener la grabación.'); }
+      } else if (active) stop();
+      else if (page === 'home') void start();
+      else { engine.reset(); navigate('home'); setFeedback('Listo. Pulsa el atajo otra vez para iniciar.'); }
+    }
     if (command === 'pause') engine.pause();
     if (command === 'mic') { if (active) engine.toggleMic(); else if (config) void change({ micEnabled: !config.settings.micEnabled }); }
     if (command === 'zoom150' && active) engine.setZoom(150);
@@ -119,7 +126,7 @@ export default function App() {
       exiting.current = true;
       void engine.stop().then(async r => { if (r && !r.saved) await window.desktop.save(r.id, r.title); await window.desktop.exitReady(); }).catch(e => { exiting.current = false; report(e); });
     }
-  }), [active, page, source, config, savingSettings]);
+  }), [active, page, source, config, savingSettings, state.phase]);
   async function folder() { try { const root = await window.desktop.chooseFolder(); if (root && config) setConfig({ ...config, root }); } catch (e) { report(e); } }
   const again = () => { setRecording(null); engine.reset(); navigate('home'); };
   const problem = error || state.error || state.warning;
@@ -132,7 +139,7 @@ export default function App() {
       {page === 'sources' && <SourcePicker back={() => { startingAfterPick.current = false; navigate('home'); }} error={report} select={s => { setSource(s); navigate('home'); if (startingAfterPick.current) { startingAfterPick.current = false; void engine.start(s.id, s.crop, s.displayId); } }} />}
       {page === 'library' && <Library back={again} error={report} recovered={config.recovered} open={r => { setRecording(r); navigate('preview'); }} />}
       {page === 'preview' && recording && <Preview recording={recording} update={setRecording} back={() => navigate('library')} again={again} error={report} />}
-      {page === 'help' && <Help back={() => navigate('home')} navigate={navigate} tutorial={() => { navigate('home'); setShowTutorial(true); }} />}
+      {page === 'help' && <Help back={() => navigate('home')} navigate={navigate} version={config.version} tutorial={() => { navigate('home'); setShowTutorial(true); }} />}
     </>}
     {message && <div className={`notice ${!problem ? 'success-notice' : ''} ${active ? 'compact-notice' : ''}`} role={problem ? 'alert' : 'status'}>{problem ? <AlertCircle size={17} /> : <CircleCheck size={17} />}<span>{message}</span><button className="icon-button" aria-label="Cerrar aviso" onClick={() => { setError(''); setFeedback(''); engine.clearError(); }}><X size={15} /></button></div>}
     {showTutorial && !active && <Tutorial navigate={navigate} finish={() => { navigate('home'); setShowTutorial(false); void change({ onboardingVersion: CURRENT_TUTORIAL_VERSION }); }} />}

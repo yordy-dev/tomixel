@@ -25,7 +25,8 @@ test('Recording lifecycle: ordered chunks, restart, rename, save and delete', as
 });
 test('IPC preference validation rejects invalid values and duplicate shortcuts', () => {
   assert.deepEqual(validateSettings(defaults), defaults);
-  for (const patch of [{ micGain: Infinity }, { micGain: -1 }, { systemGain: Infinity }, { systemGain: -.1 }, { systemGain: 1.1 }, { screenFps: 240 }, { theme: 'invalid' }, { micEnabled: 'yes' }, { micId: 'a'.repeat(600) }, { shortcuts: { ...defaults.shortcuts, record: 'Ctrl+R', zoom150: 'Ctrl+R' } }, { shortcuts: { ...defaults.shortcuts, zoom150: 'Ctrl+Shift+1' } }, { shortcuts: { ...defaults.shortcuts, zoom150: 'A' } }, { cameraView: 'invalid' }, { cameraView: 'image', cameraImage: '' }, { cameraImage: 'https://example.com/remote.png' }, { cameraImage: 'data:image/svg+xml,<svg />' }, { cameraBackground: 'invalid' }, { cameraBackground: 'image', cameraBackgroundImage: '' }, { cameraBackgroundImage: 'https://example.com/remote.jpg' }, { cameraBrightness: 51 }, { cameraContrast: -51 }, { cameraTemperature: 0.5 }, { cameraSaturation: Infinity }, { fullscreenScale: 55 }, { fullscreenScale: 0 }]) assert.throws(() => validateSettings({ ...defaults, ...patch }));
+  for (const patch of [{ micGain: Infinity }, { micGain: -1 }, { systemGain: Infinity }, { systemGain: -.1 }, { systemGain: 1.1 }, { screenFps: 240 }, { theme: 'invalid' }, { micEnabled: 'yes' }, { micId: 'a'.repeat(600) }, { shortcuts: { ...defaults.shortcuts, record: 'Ctrl+R', zoom150: 'Ctrl+R' } }, { shortcuts: { ...defaults.shortcuts, zoom150: 'A' } }, { cameraView: 'invalid' }, { cameraView: 'image', cameraImage: '' }, { cameraImage: 'https://example.com/remote.png' }, { cameraImage: 'data:image/svg+xml,<svg />' }, { cameraBackground: 'invalid' }, { cameraBackground: 'image', cameraBackgroundImage: '' }, { cameraBackgroundImage: 'https://example.com/remote.jpg' }, { cameraBrightness: 51 }, { cameraContrast: -51 }, { cameraTemperature: 0.5 }, { cameraSaturation: Infinity }, { fullscreenScale: 55 }, { fullscreenScale: 0 }]) assert.throws(() => validateSettings({ ...defaults, ...patch }));
+  assert.equal(validateSettings({ ...defaults, shortcuts: { ...defaults.shortcuts, zoom150: 'Control+Shift+1', cameraSmall: '' } }).shortcuts.zoom150, 'Control+Shift+1');
   assert.throws(() => validTitle('')); assert.throws(() => validTitle('a\nnew line'));
 });
 test('Every saved shortcut name maps to the renderer command it must execute', () => {
@@ -59,6 +60,25 @@ test('Orphan recording recovery and malicious index filename filtering', async (
   const recovered = new RecordingStore(root); await recovered.init(); assert.equal(recovered.list().length, 1); assert.equal(recovered.list()[0].saved, false);
   const bad = { ...recovered.list()[0], filename: '../outside.webm' }; await fs.writeFile(path.join(root, 'recordings.json'), JSON.stringify([bad]));
   const safe = new RecordingStore(root); await safe.init(); assert.ok(safe.list().every(r => !r.filename.includes('/')));
+});
+test('Corrupt library index is backed up and rebuilt from existing videos', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'local-recorder-corrupt-index-'));
+  const store = new RecordingStore(root); await store.init(); const id = await store.begin(); await store.append(id, Uint8Array.from([1, 2, 3]).buffer); await store.finish(id, 1);
+  await fs.writeFile(path.join(root, 'recordings.json'), '{broken json');
+  const recovered = new RecordingStore(root); assert.equal(await recovered.init(), 1); assert.equal(recovered.list().length, 1); assert.equal(recovered.list()[0].recovered, true);
+  assert.ok((await fs.readdir(root)).some(name => /^recordings\.json\.\d+\.backup$/.test(name)));
+});
+test('Recycle-bin failure restores both the file and its library entry', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'local-recorder-trash-'));
+  const store = new RecordingStore(root); await store.init(); const id = await store.begin(); await store.append(id, Uint8Array.from([7, 8, 9]).buffer); await store.finish(id, 1);
+  const original = store.getPath(id); await assert.rejects(store.trash(id, async () => { throw new Error('Recycle Bin unavailable'); }));
+  assert.equal(store.list().length, 1); assert.deepEqual([...await fs.readFile(original)], [7, 8, 9]);
+});
+test('Interrupted deletion tombstone is restored and recovered on startup', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'local-recorder-tombstone-'));
+  const store = new RecordingStore(root); await store.init(); const id = await store.begin(); await store.append(id, Uint8Array.from([4, 5, 6]).buffer); const recording = await store.finish(id, 1);
+  const original = store.getPath(id); await fs.rename(original, `${original}.deleting`); await fs.writeFile(path.join(root, 'recordings.json'), '[]');
+  const recovered = new RecordingStore(root); assert.equal(await recovered.init(), 1); assert.equal(recovered.list()[0].filename, recording.filename); assert.deepEqual([...await fs.readFile(original)], [4, 5, 6]);
 });
 test('WebM duration is inserted into real Chromium header, without buffering video', async () => {
   const header = Buffer.from('1a45dfa39f4286810142f7810142f2810442f381084282847765626d42878104428581021853806701ffffffffffffff1549a966992ad7b1830f42404d80864368726f6d655741864368726f6d651654ae6b80', 'hex');

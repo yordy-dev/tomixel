@@ -52,7 +52,7 @@ export const defaults: Settings = {
   captureResolution: '1080p', onboardingVersion: 0, voiceProfile: 'natural',
   teleprompterText: TELEPROMPTER_WELCOME, teleprompterSpeed: 110, teleprompterFontSize: 34, teleprompterOpacity: .88, teleprompterWidth: 620,
   showControls: true, autoSave: false, openAfterSave: false, theme: 'system',
-  shortcuts: { record: 'Control+R', pause: 'Control+P', mic: 'Control+M', zoom150: 'Control+1', zoom200: 'Control+2', cameraSmall: 'Control+Q', cameraMedium: 'Control+W', cameraFullscreen: 'Control+E', cameraImage: 'Control+I' }
+  shortcuts: { record: 'Alt+F9', pause: 'Alt+F10', mic: 'Alt+F8', zoom150: 'Alt+1', zoom200: 'Alt+2', cameraSmall: '', cameraMedium: '', cameraFullscreen: '', cameraImage: '' }
 };
 export interface CutRange { start: number; end: number }
 export interface CaptureArea { x: number; y: number; width: number; height: number }
@@ -61,9 +61,10 @@ export interface Recording { id: string; title: string; filename: string; create
 export interface Status { phase: Phase; elapsed: number; mic: boolean; camera: boolean }
 export interface CursorState { x: number; y: number; click: number; zoom: number; visible: boolean }
 export interface StorageStats { freeBytes: number; totalBytes: number }
+export interface EditorMedia { url: string; fps: number; waveform: string | null }
 export interface CameraVideoPacket { data: ArrayBuffer; type: 'key' | 'delta'; timestamp: number; duration?: number; width: number; height: number; capturedAt: number }
 export type CameraEffectPerformance = 'off' | 'loading' | 'optimal' | 'limited' | 'unavailable';
-export interface Config { settings: Settings; root: string; systemAudioSupported: boolean; shortcutErrors: string[]; recovered: number; firstRun: boolean }
+export interface Config { settings: Settings; root: string; systemAudioSupported: boolean; shortcutErrors: string[]; recovered: number; firstRun: boolean; version: string }
 export interface DesktopAPI {
   config(): Promise<Config>; setSettings(s: Settings): Promise<Config>; chooseFolder(): Promise<string | null>;
   validateShortcuts(s: Settings['shortcuts']): Promise<{ valid: boolean; errors: string[] }>;
@@ -73,7 +74,8 @@ export interface DesktopAPI {
   discardRestart(id: string): Promise<boolean>;
   saveEdits(id: string, cuts: CutRange[]): Promise<Recording>; saveScreenshot(id: string, png: ArrayBuffer): Promise<string | null>; copyScreenshot(png: ArrayBuffer): Promise<boolean>;
   library(): Promise<Recording[]>; rename(id: string, title: string): Promise<Recording>; remove(id: string): Promise<boolean>; removeMany(ids: string[]): Promise<number>;
-  thumbnail(id: string): Promise<string | null>; editorProxy(id: string): Promise<string>; exportMp4(id: string, title: string, cuts: CutRange[], duration: number): Promise<string | null>;
+  thumbnail(id: string): Promise<string | null>; editorProxy(id: string): Promise<EditorMedia>; exportMp4(id: string, title: string, cuts: CutRange[], duration: number): Promise<string | null>;
+  cancelExport(id: string): Promise<boolean>; clearEditorCache(): Promise<number>;
   cursor(displayId: string): Promise<CursorState>; storageStats(): Promise<StorageStats>;
   openFolder(id?: string): Promise<void>; status(s: Status): Promise<void>; layout(page: string): Promise<void>;
   stageLayout(page: string): Promise<void>; revealLayout(): Promise<void>;

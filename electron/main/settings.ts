@@ -3,17 +3,24 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { defaults, isLegacyTeleprompterText, TELEPROMPTER_SPEEDS, TELEPROMPTER_WELCOME, type Settings } from '../../shared/types';
 
-const settingsSchemaVersion = 10;
+const settingsSchemaVersion = 11;
 
 const shortcutNames = ['record', 'pause', 'mic', 'zoom150', 'zoom200', 'cameraSmall', 'cameraMedium', 'cameraFullscreen', 'cameraImage'] as const;
 const modifierNames = new Set(['CommandOrControl', 'Control', 'Ctrl', 'Alt', 'Shift', 'Super']);
 const forbiddenShortcuts = new Set(['alt+f4', 'super+l', 'control+alt']);
+const legacyConflictShortcuts: Settings['shortcuts'] = {
+  record: 'Control+R', pause: 'Control+P', mic: 'Control+M', zoom150: 'Control+1', zoom200: 'Control+2',
+  cameraSmall: 'Control+Q', cameraMedium: 'Control+W', cameraFullscreen: 'Control+E', cameraImage: 'Control+I'
+};
 
-/** Only one modifier plus one usable key: two physical keys, easy to remember. */
+/** Optional accelerator with one or two modifiers plus one usable key. */
 export function validTwoKeyShortcut(value: unknown): value is string {
   if (typeof value !== 'string' || value.length > 80) return false;
+  if (!value) return true;
   const parts = value.split('+');
-  if (parts.length !== 2 || !modifierNames.has(parts[0]) || !/^(?:[A-Z0-9]|F(?:[1-9]|1[0-2])|Space|Tab|Up|Down|Left|Right|Plus|Minus)$/i.test(parts[1])) return false;
+  const modifiers = parts.slice(0, -1);
+  const key = parts.at(-1) || '';
+  if (parts.length < 2 || parts.length > 3 || modifiers.some(part => !modifierNames.has(part)) || new Set(modifiers.map(part => part.toLowerCase())).size !== modifiers.length || !/^(?:[A-Z0-9]|F(?:[1-9]|1[0-2])|Space|Tab|Up|Down|Left|Right|Plus|Minus)$/i.test(key)) return false;
   return !forbiddenShortcuts.has(value.toLowerCase());
 }
 
@@ -56,10 +63,11 @@ export function validateSettings(input: unknown): Settings {
   const keys = s.shortcuts as Record<string, unknown>;
   if (!keys || typeof keys !== 'object') throw new Error('Atajos inválidos.');
   for (const key of shortcutNames) {
-    if (!validTwoKeyShortcut(keys[key])) throw new Error('Atajo inválido. Usa dos teclas, por ejemplo Ctrl+R.');
+    if (!validTwoKeyShortcut(keys[key])) throw new Error('Atajo inválido. Usa dos o tres teclas, por ejemplo Alt+F9 o Ctrl+Shift+R.');
     out.shortcuts[key] = keys[key];
   }
-  if (new Set(Object.values(out.shortcuts).map(s => s.toLowerCase())).size !== shortcutNames.length) throw new Error('Los atajos deben ser distintos.');
+  const assigned = Object.values(out.shortcuts).filter(Boolean).map(s => s.toLowerCase());
+  if (new Set(assigned).size !== assigned.length) throw new Error('Los atajos deben ser distintos.');
   return out;
 }
 export async function atomicJSON(file: string, value: unknown) {
@@ -79,12 +87,13 @@ export class Preferences {
       const legacyShortcuts = value.settings?.shortcuts || {};
       const migratedShortcuts = Object.fromEntries(shortcutNames.map(key => {
         const value = legacyShortcuts[key];
-        // Previous versions used three keys by default. Preserve the action while
-        // moving it to the new two-key model requested by the user.
-        const migrated = typeof value === 'string' ? value.replace(/^(CommandOrControl|Control|Ctrl|Alt|Shift|Super)\+Shift\+/, '$1+') : value;
+        const migrated = value;
         return [key, validTwoKeyShortcut(migrated) ? migrated : defaults.shortcuts[key]];
       }));
       const loaded = { ...defaults, ...value.settings, shortcuts: { ...defaults.shortcuts, ...migratedShortcuts } };
+      const migratesLegacyConflicts = (!Number.isInteger(value.schemaVersion) || value.schemaVersion < 11)
+        && shortcutNames.every(key => loaded.shortcuts[key] === legacyConflictShortcuts[key]);
+      if (migratesLegacyConflicts) loaded.shortcuts = { ...defaults.shortcuts };
       const migratedTeleprompter = isLegacyTeleprompterText(loaded.teleprompterText);
       if (migratedTeleprompter) loaded.teleprompterText = TELEPROMPTER_WELCOME;
       if (!TELEPROMPTER_SPEEDS.includes(loaded.teleprompterSpeed as (typeof TELEPROMPTER_SPEEDS)[number])) {
@@ -99,10 +108,14 @@ export class Preferences {
       }
       this.settings = validateSettings(loaded);
       if (typeof value.root === 'string' && path.isAbsolute(value.root)) this.root = value.root;
-      if (migratedTeleprompter) await this.persist();
+      if (migratedTeleprompter || migratesLegacyConflicts || !Number.isInteger(value.schemaVersion) || value.schemaVersion < settingsSchemaVersion) await this.persist();
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') await this.persist();
-      else await fs.copyFile(this.file, `${this.file}.backup`).catch(() => {});
+      else {
+        await fs.copyFile(this.file, `${this.file}.${Date.now()}.backup`).catch(() => {});
+        this.settings = { ...defaults, shortcuts: { ...defaults.shortcuts } };
+        await this.persist();
+      }
     }
   }
   async persist() { await atomicJSON(this.file, { schemaVersion: settingsSchemaVersion, settings: this.settings, root: this.root }); }

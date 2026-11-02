@@ -111,11 +111,19 @@ export class RecorderEngine {
     }
     const video: MediaTrackConstraints = { deviceId: s.cameraId ? { exact: s.cameraId } : undefined, width: { ideal: s.cameraResolution * 16 / 9 }, height: { ideal: s.cameraResolution }, frameRate: { ideal: s.cameraFps, max: s.cameraFps } };
     const get = async (kind: 'audio' | 'video', constraints: MediaTrackConstraints) => {
-      try { return await navigator.mediaDevices.getUserMedia({ [kind]: constraints }); }
+      const requestDevice = async (desired: MediaTrackConstraints) => {
+        const request = navigator.mediaDevices.getUserMedia({ [kind]: desired });
+        let expired = false, timer: number | undefined;
+        const timeout = new Promise<never>((_, reject) => { timer = window.setTimeout(() => { expired = true; reject(new DOMException('El dispositivo no respondió a tiempo.', 'TimeoutError')); }, 8000); });
+        try { return await Promise.race([request, timeout]); }
+        catch (error) { if (expired) void request.then(stream => stream.getTracks().forEach(track => track.stop())).catch(() => {}); throw error; }
+        finally { window.clearTimeout(timer); }
+      };
+      try { return await requestDevice(constraints); }
       catch (e) {
         if ((e as Error).name === 'OverconstrainedError' && constraints.deviceId) {
           warnings.push('El dispositivo seleccionado cambió. Se usará el predeterminado.');
-          try { return await navigator.mediaDevices.getUserMedia({ [kind]: { ...constraints, deviceId: undefined } }); } catch (error) { e = error; }
+          try { return await requestDevice({ ...constraints, deviceId: undefined }); } catch (error) { e = error; }
         }
         warnings.push(`${kind === 'audio' ? 'Micrófono' : 'Cámara'}: ${mediaError(e)}`); return null;
       }

@@ -1,4 +1,4 @@
-import { ipcMain, clipboard, desktopCapturer, dialog, session, shell, nativeImage, screen } from 'electron';
+import { app, ipcMain, clipboard, desktopCapturer, dialog, session, shell, nativeImage, screen } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { preferences, storage, windows, state, setStatus, setStore, shortcutErrors, recovered, registerShortcuts, checkShortcuts, exitReady } from '../main/index';
@@ -7,13 +7,14 @@ import { RecordingStore } from '../main/storage';
 import { trusted } from '../windows/manager';
 import { exportMp4 } from '../main/exporter';
 import { clickMonitor } from '../main/cursor';
-import { prepareEditorProxy } from '../main/editor-proxy';
+import { clearEditorCache, prepareEditorProxy } from '../main/editor-proxy';
 import type { CameraVideoPacket } from '../../shared/types';
 
 export function registerIPC() {
   let selection: { id: string; audio: boolean; expires: number } | null = null;
+  const exports = new Map<string, AbortController>();
   let tail = Promise.resolve();
-  const config = () => ({ settings: preferences.settings, root: preferences.root, systemAudioSupported: process.platform === 'win32', shortcutErrors, recovered: storage ? storage.list().filter(item => item.recovered).length : recovered, firstRun: preferences.firstRun });
+  const config = () => ({ settings: preferences.settings, root: preferences.root, systemAudioSupported: process.platform === 'win32', shortcutErrors, recovered: storage ? storage.list().filter(item => item.recovered).length : recovered, firstRun: preferences.firstRun, version: app.getVersion() });
   function handle(channel: string, fn: (...args: any[]) => unknown, serial = false, allowBubble = false) {
     ipcMain.handle(channel, (event, ...args) => {
       const sender = event.sender;
@@ -211,29 +212,36 @@ export function registerIPC() {
   handle('rename', (id, title) => storage.rename(id, title), true);
   const remove = async (id: string) => {
     const r = storage.list().find(r => r.id === id); if (!r) throw new Error('Grabación no encontrada.');
-    const answer = await dialog.showMessageBox(windows.main, { type: 'warning', message: `¿Eliminar “${r.title}”?`, detail: 'El archivo se eliminará de este equipo.', buttons: ['Cancelar', 'Eliminar'], defaultId: 0, cancelId: 0 });
-    return answer.response === 1 ? storage.remove(id) : false;
+    const answer = await dialog.showMessageBox(windows.main, { type: 'warning', message: `¿Eliminar “${r.title}”?`, detail: 'El archivo se moverá a la Papelera de Windows.', buttons: ['Cancelar', 'Mover a la Papelera'], defaultId: 0, cancelId: 0 });
+    if (answer.response !== 1) return false;
+    const removed = await storage.trash(id, file => shell.trashItem(file));
+    await clearEditorCache(id); return removed;
   };
   handle('remove', remove, true); handle('discard', remove, true);
   handle('remove-many', async ids => {
     if (!Array.isArray(ids) || !ids.length || ids.length > 500 || ids.some(id => typeof id !== 'string')) throw new Error('Selección inválida.');
     const unique = [...new Set(ids)];
     if (unique.some(id => !storage.list().some(r => r.id === id))) throw new Error('Una grabación seleccionada ya no existe.');
-    const answer = await dialog.showMessageBox(windows.main, { type: 'warning', message: `¿Eliminar ${unique.length} grabaciones?`, detail: 'Los archivos se eliminarán de este equipo.', buttons: ['Cancelar', 'Eliminar'], defaultId: 0, cancelId: 0 });
+    const answer = await dialog.showMessageBox(windows.main, { type: 'warning', message: `¿Eliminar ${unique.length} grabaciones?`, detail: 'Los archivos se moverán a la Papelera de Windows.', buttons: ['Cancelar', 'Mover a la Papelera'], defaultId: 0, cancelId: 0 });
     if (answer.response !== 1) return 0;
-    for (const id of unique) await storage.remove(id);
+    for (const id of unique) { await storage.trash(id, file => shell.trashItem(file)); await clearEditorCache(id); }
     return unique.length;
   }, true);
   handle('thumbnail', async id => { const image = await nativeImage.createThumbnailFromPath(storage.getPath(id), { width: 192, height: 108 }); return image.isEmpty() ? null : image.toDataURL(); });
   handle('editor-proxy', async id => {
     const recording = storage.list().find(r => r.id === id); if (!recording) throw new Error('Grabación no encontrada.');
-    await prepareEditorProxy(storage, recording, (percent, stage) => windows.main.webContents.send('editor-progress', { id, percent, stage }));
-    return `lr-media://editor/${recording.id}`;
+    return prepareEditorProxy(storage, recording, (percent, stage) => windows.main.webContents.send('editor-progress', { id, percent, stage }));
   }, true);
   handle('export-mp4', async (id, title, cuts, duration) => {
     const recording = storage.list().find(r => r.id === id); if (!recording) throw new Error('Grabación no encontrada.');
-    return exportMp4(storage, recording, title, cuts, duration, preferences.settings.captureResolution);
+    if (exports.has(id)) throw new Error('Ya hay una exportación en curso.');
+    const controller = new AbortController(); exports.set(id, controller);
+    try {
+      return await exportMp4(storage, recording, title, cuts, duration, preferences.settings.captureResolution, percent => windows.main.webContents.send('editor-progress', { id, percent, stage: 'Exportando MP4' }), controller.signal);
+    } finally { exports.delete(id); }
   }, true);
+  handle('cancel-export', id => { const controller = exports.get(id); if (!controller) return false; controller.abort(); return true; });
+  handle('clear-editor-cache', () => clearEditorCache(), true);
   handle('storage-stats', async () => { const stats = await fs.statfs(preferences.root); return { freeBytes: stats.bavail * stats.bsize, totalBytes: stats.blocks * stats.bsize }; });
   handle('cursor', displayId => {
     if (typeof displayId !== 'string' || displayId.length > 40) throw new Error('Pantalla inválida.');

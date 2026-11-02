@@ -8,7 +8,7 @@ import { Windows, trusted } from '../windows/manager';
 import { registerIPC } from '../ipc/handlers';
 import { shortcutCommands, type Status, type Command, type ShortcutName } from '../../shared/types';
 import { clickMonitor } from './cursor';
-import { editorProxyPath } from './editor-proxy';
+import { clearEditorCache, editorProxyPath } from './editor-proxy';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'lr-media', privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true, corsEnabled: true } }]);
 // Automated packaged checks use an isolated profile. Production launches do
@@ -38,6 +38,7 @@ export function registerShortcuts() {
   globalShortcut.unregisterAll(); shortcutErrors = [];
   for (const [name, key] of Object.entries(preferences.settings.shortcuts)) {
     const mappedCommand = shortcutCommands[name as ShortcutName];
+    if (!key) continue;
     if (!mappedCommand) { shortcutErrors.push(key); continue; }
     try { if (!globalShortcut.register(key, () => command(mappedCommand))) shortcutErrors.push(key); }
     catch { shortcutErrors.push(key); }
@@ -45,11 +46,13 @@ export function registerShortcuts() {
 }
 export function checkShortcuts(shortcuts: typeof preferences.settings.shortcuts) {
   const values = Object.entries(shortcuts);
-  if (values.length !== Object.keys(preferences.settings.shortcuts).length || values.some(([, key]) => !validTwoKeyShortcut(key))) return { valid: false, errors: ['Cada atajo debe usar una modificadora y una tecla.'] };
-  if (new Set(values.map(([, key]) => key.toLowerCase())).size !== values.length) return { valid: false, errors: ['No repitas la misma combinación.'] };
+  if (values.length !== Object.keys(preferences.settings.shortcuts).length || values.some(([, key]) => !validTwoKeyShortcut(key))) return { valid: false, errors: ['Cada atajo debe quedar vacío o usar una o dos modificadoras y una tecla final.'] };
+  const assigned = values.filter(([, key]) => key).map(([, key]) => key.toLowerCase());
+  if (new Set(assigned).size !== assigned.length) return { valid: false, errors: ['No repitas la misma combinación.'] };
   const errors: string[] = [];
   globalShortcut.unregisterAll();
   for (const [, key] of values) {
+    if (!key) continue;
     try { if (!globalShortcut.register(key, () => {})) errors.push(`“${key}” está ocupado por Windows u otra aplicación.`); }
     catch { errors.push(`“${key}” no está disponible.`); }
   }
@@ -132,6 +135,7 @@ else {
     if (process.env.LOCAL_RECORDER_TEST_DIR) preferences.root = path.join(app.getPath('userData'), 'videos');
     storage = new RecordingStore(preferences.root);
     recovered = await storage.init();
+    await clearEditorCache();
     protocol.handle('lr-media', async request => {
       try {
         const u = new URL(request.url);

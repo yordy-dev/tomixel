@@ -23,6 +23,18 @@ export class RecordingStore {
     await fs.mkdir(this.directory(true), { recursive: true });
     await fs.mkdir(this.directory(false), { recursive: true });
     await fs.access(this.root, constants.W_OK);
+    // A crash between renaming a video and updating/moving it must never turn
+    // into silent data loss. Restore tombstones so the normal recovery scan
+    // can index them again.
+    for (const saved of [false, true]) {
+      const folder = this.directory(saved);
+      for (const filename of await fs.readdir(folder)) {
+        if (!/^[\w.-]+\.webm\.deleting$/.test(filename)) continue;
+        const tomb = path.join(folder, filename), original = tomb.slice(0, -'.deleting'.length);
+        try { await fs.access(original); await fs.rm(tomb, { force: true }); }
+        catch { await fs.rename(tomb, original).catch(() => {}); }
+      }
+    }
     try {
       const data = JSON.parse(await fs.readFile(this.index, 'utf8'));
       if (!Array.isArray(data)) throw new Error('Índice inválido');
@@ -30,7 +42,7 @@ export class RecordingStore {
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
         await fs.copyFile(this.index, `${this.index}.${Date.now()}.backup`);
-        throw new Error('El índice de la biblioteca está dañado. Se conservó una copia; no se modificaron los videos.');
+        this.entries = [];
       }
     }
     // Recover pending chunks and unindexed saved files after an interrupted session.
@@ -126,6 +138,21 @@ export class RecordingStore {
     this.entries = this.entries.filter(entry => entry.id !== id);
     try { await this.persist(); } catch (e) { this.entries.push(r); await fs.rename(tomb, file); throw e; }
     await fs.unlink(tomb);
+    return true;
+  }
+  async trash(id: string, moveToTrash: (file: string) => Promise<void>) {
+    const r = this.find(id); const file = this.file(r); const tomb = `${file}.deleting`;
+    await fs.rename(file, tomb);
+    this.entries = this.entries.filter(entry => entry.id !== id);
+    try {
+      await this.persist();
+      await moveToTrash(path.resolve(tomb));
+    } catch (e) {
+      if (!this.entries.some(entry => entry.id === r.id)) this.entries.push(r);
+      await this.persist().catch(() => {});
+      await fs.rename(tomb, file).catch(() => {});
+      throw e;
+    }
     return true;
   }
   async closeHandles() { for (const handle of this.active.values()) await handle.close().catch(() => {}); this.active.clear(); }

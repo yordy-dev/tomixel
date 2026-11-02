@@ -2,7 +2,7 @@ import type { CutRange } from '../../shared/types';
 
 export function normalizeCuts(input: unknown, duration: number): CutRange[] {
   if (!Number.isFinite(duration) || duration <= 0) throw new Error('La duración del video no es válida.');
-  if (!Array.isArray(input) || input.length > 32) throw new Error('La lista de cortes no es válida.');
+  if (!Array.isArray(input) || input.length > 100) throw new Error('La lista de cortes no es válida. El máximo es 100.');
   const ranges = input.map(value => {
     if (!value || typeof value !== 'object') throw new Error('Hay un corte inválido.');
     const { start, end } = value as Record<string, unknown>;
